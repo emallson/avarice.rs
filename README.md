@@ -3,7 +3,7 @@
 A (relatively) efficient Rust implementation of the greedy algorithm that is generic across varying
 objectives.
 
-[Documentation](//atlanis.net/doc/rs/avarice/)
+[Documentation](http://atlanis.net/doc/rs/avarice/)
 
 # License
 
