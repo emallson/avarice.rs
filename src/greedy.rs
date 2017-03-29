@@ -13,7 +13,6 @@
 //! method to improve performance, as even when the `benefit` function is trivial the default
 //! implementation still includes an avoidable copy.
 use std::collections::BinaryHeap;
-use std::iter::FromIterator;
 use std::cmp::Ordering;
 use slog::{DrainExt, Logger};
 use slog_stdlog::StdLog;
@@ -87,7 +86,7 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
             .collect()
     }
 
-    let elements = Set::from_iter(obj.elements());
+    let elements = obj.elements().collect::<Set<_>>();
     debug!(log, "initializing heap");
     let mut heap = reheap(&solset,
                           obj,

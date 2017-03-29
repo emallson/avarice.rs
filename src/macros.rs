@@ -28,7 +28,6 @@
 macro_rules! validate {
     ($t:ty) => {
         use quickcheck::TestResult;
-        use std::iter::FromIterator;
 
         type Obj = $t;
         type Element = <$t as Objective>::Element;
@@ -39,7 +38,7 @@ macro_rules! validate {
         }
 
         fn valid_solution(obj: &Obj, sol: &Set<Element>) -> bool {
-            let all_els = Set::from_iter(obj.elements());
+            let all_els = obj.elements().collect();
 
             sol.difference(&all_els).count() == 0
         }
@@ -113,7 +112,7 @@ macro_rules! validate {
                 }
 
                 let st = state(&obj, &sol);
-                let depends = Vec::from_iter(obj.depends(u, &st).unwrap());
+                let depends = obj.depends(u, &st).unwrap().collect::<Vec<_>>();
 
                 for &dep in &depends {
                     if independent(&obj, &st, dep, u) {
