@@ -5,10 +5,12 @@ version = "0.1.0"
 
 [dependencies]
 error-chain = "0.10.0"
+fnv = "1.0.5"
 rand = "0.3.15"
 rayon = "0.6.0"
 slog = "1.5.2"
 slog-stdlog = "1.1.0"
 
 [dev-dependencies]
-quickcheck = "0.4.1"
+quickcheck = {version = "0.4.1", git="https://github.com/emallson/quickcheck.git"}
+

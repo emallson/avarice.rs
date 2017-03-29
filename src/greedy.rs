@@ -66,7 +66,7 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
 {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
     let mut state = O::State::default();
-    let mut solset = Set::new();
+    let mut solset = Set::default();
     fn reheap<O: Objective>(sol: &Set<O::Element>,
                             obj: &O,
                             state: &O::State,

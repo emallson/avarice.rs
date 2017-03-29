@@ -1,12 +1,12 @@
 //! This module contains a trait representing the (real-valued) objective associated with a
 //! discrete optimization problem. The greedy algorithm contained in this crate is implemented for
 //! any struct implementing `Objective`.
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use rand::{Rng, thread_rng};
 use rand::distributions::{Range, IndependentSample};
 use errors::*;
+use fnv::FnvHashSet;
 
 #[derive(Copy, Clone, Debug)]
 pub enum SampleElement<E> {
@@ -16,7 +16,7 @@ pub enum SampleElement<E> {
 
 use self::SampleElement::*;
 
-pub type Set<E> = HashSet<E>;
+pub type Set<E> = FnvHashSet<E>;
 
 pub type ElementIterator<'a, O> = Box<Iterator<Item = <O as Objective>::Element> + 'a>;
 
