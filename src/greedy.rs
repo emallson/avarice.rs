@@ -124,3 +124,95 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
     debug!(log, "greedy solution"; "f" => f);
     Ok((f, sol, state))
 }
+
+pub fn lazy_greedy<O: Objective>(obj: &O,
+                                 k: usize,
+                                 log: Option<Logger>)
+                                 -> Result<(f64, Vec<O::Element>, O::State)> {
+    assert!(O::curv_bounds() == Curvature::Submodular);
+    let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
+    let mut state = O::State::default();
+    let mut solset = Set::default();
+    // an insertion is *incomplete* if it has been added to the solution, but it `insert` has not
+    // been called for it to update the state.
+    let mut incomplete_insertions: Set<O::Element> = Set::default();
+    let mut time_since_reheap = 0;
+    let mut times = Vec::with_capacity(k);
+    let mut deps_size = Vec::new();
+    fn reheap<O: Objective>(sol: &Set<O::Element>,
+                            obj: &O,
+                            state: &O::State,
+                            prior: BinaryHeap<WeightedNode<O>>,
+                            elements: Set<O::Element>)
+                            -> Result<BinaryHeap<WeightedNode<O>>> {
+        prior.into_iter()
+            .filter(|ref we| !elements.contains(&we.node))
+            .map(|we| Ok(we))
+            .chain(elements.iter().cloned().map(|e| {
+                let w = obj.delta(e, &sol, &state)?;
+                Ok(WeightedNode {
+                    node: e,
+                    weight: w,
+                })
+            }))
+            .collect()
+    }
+
+    let elements = obj.elements().collect::<Set<_>>();
+    debug!(log, "initializing heap");
+    let mut heap = reheap(&solset,
+                          obj,
+                          &state,
+                          BinaryHeap::with_capacity(elements.len()),
+                          elements)?;
+    debug!(log, "done initializing heap");
+
+    let mut f = 0.0;
+    let mut sol = Vec::with_capacity(k);
+    let mut i = 0;
+    while let Some(top) = heap.pop() {
+        let deps = obj.depends(top.node, &state)?.collect::<Set<_>>();
+        let incomplete_deps = deps.iter()
+            .filter(|&u| incomplete_insertions.contains(&u))
+            .cloned()
+            .collect::<Set<_>>();
+        let mut todos = Vec::new();
+        for &dep in &incomplete_deps {
+            obj.insert_mut(dep, &mut state)?;
+            incomplete_insertions.remove(&dep);
+            todos.extend(obj.depends(dep, &state)?);
+        }
+
+        if incomplete_deps.len() > 0 {
+            // this may no longer be the top node, put it back on the heap and reheap
+            heap.push(top);
+            heap = reheap(&solset, obj, &state, heap, todos.into_iter().collect())?;
+            deps_size.push(incomplete_deps.len());
+            times.push(time_since_reheap);
+            time_since_reheap = 0;
+            continue;
+        }
+
+        time_since_reheap += 1;
+
+        sol.push(top.node);
+        solset.insert(top.node.into());
+        incomplete_insertions.insert(top.node);
+        f += top.weight;
+        trace!(log, "selected element"; "node" => format!("{:?}", top.node), "objective value" => f);
+
+        // can't && i < k in a while let, unfortunately
+        i += 1;
+        if i >= k {
+            break;
+        }
+    }
+
+    info!(log, "greedy solution"; 
+          "f" => f,
+          "lazy speedup" => incomplete_insertions.len() as f64 / k as f64,
+          "insertions skipped" => incomplete_insertions.len(),
+          "avg steps between reheaps" => times.iter().sum::<usize>() as f64 / times.len() as f64,
+          "avg incomplete deps at reheap" => deps_size.iter().sum::<usize>() as f64 / deps_size.len() as f64);
+    Ok((f, sol, state))
+}

@@ -20,6 +20,20 @@ pub type Set<E> = FnvHashSet<E>;
 
 pub type ElementIterator<'a, O> = Box<Iterator<Item = <O as Objective>::Element> + 'a>;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Curvature {
+    Unbounded,
+    Bounded(Option<usize>, Option<usize>),
+    Submodular,
+    Supermodular,
+}
+
+impl Default for Curvature {
+    fn default() -> Self {
+        Curvature::Unbounded
+    }
+}
+
 /// An objective to be optimized.
 ///
 /// The functions are assumed to be 'internally-stateless'. That is, they do not modify the problem
@@ -34,6 +48,12 @@ pub trait Objective: Sized {
     /// Holds any state that is tracked either to assist in correctness or to provide e.g.
     /// cacheing.
     type State: Default + Clone;
+
+    /// The curvature structure of the objective. Used for some optimizations, defaults to
+    /// `Unbounded` (which has no optimizations).
+    fn curv_bounds() -> Curvature {
+        Curvature::default()
+    }
 
     /// The domain of the solution.
     fn elements(&self) -> ElementIterator<Self>;
