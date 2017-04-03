@@ -223,3 +223,18 @@ pub trait Objective: Sized {
         Ok(seq)
     }
 }
+
+pub trait LazyObjective: Objective {
+    /// Updates the marginal gain of `element`, returning it value after updating the state to
+    /// reflect the insertion of `previous` elements.
+    ///
+    /// Returns `Ok(None)` if the marginal gain does not need to be updated.
+    fn update_lazy_mut(&self,
+                       element: Self::Element,
+                       previous: &Set<Self::Element>,
+                       state: &mut Self::State)
+                       -> Result<Option<f64>>;
+
+    /// Update the state to preserve invariants upon insertion of `element`.
+    fn insert_lazy_mut(&self, element: Self::Element, state: &mut Self::State) -> Result<()>;
+}

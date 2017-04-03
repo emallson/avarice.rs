@@ -216,3 +216,87 @@ pub fn lazy_greedy<O: Objective>(obj: &O,
           "avg incomplete deps at reheap" => deps_size.iter().sum::<usize>() as f64 / deps_size.len() as f64);
     Ok((f, sol, state))
 }
+
+
+pub fn lazier_greedy<O: Objective + LazyObjective>(obj: &O,
+                                                   k: usize,
+                                                   log: Option<Logger>)
+                                                   -> Result<(f64, Vec<O::Element>, O::State)> {
+    assert!(O::curv_bounds() == Curvature::Submodular);
+    let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
+    let mut state = O::State::default();
+    let mut solset = Set::default();
+    // an insertion is *incomplete* if it has been added to the solution, but it `insert` has not
+    // been called for it to update the state.
+    fn reheap<O: Objective>(sol: &Set<O::Element>,
+                            obj: &O,
+                            state: &O::State,
+                            prior: BinaryHeap<WeightedNode<O>>,
+                            elements: Set<O::Element>)
+                            -> Result<BinaryHeap<WeightedNode<O>>> {
+        prior.into_iter()
+            .filter(|ref we| !elements.contains(&we.node))
+            .map(|we| Ok(we))
+            .chain(elements.iter().cloned().map(|e| {
+                let w = obj.delta(e, &sol, &state)?;
+                Ok(WeightedNode {
+                    node: e,
+                    weight: w,
+                })
+            }))
+            .collect()
+    }
+
+    let elements = obj.elements().collect::<Set<_>>();
+    debug!(log, "initializing heap");
+    let mut heap = reheap(&solset,
+                          obj,
+                          &state,
+                          BinaryHeap::with_capacity(elements.len()),
+                          elements)?;
+    debug!(log, "done initializing heap");
+
+    let mut f = 0.0;
+    let mut sol = Vec::with_capacity(k);
+    let mut i = 0;
+    while let Some(top) = heap.pop() {
+        let updated_gain = if top.weight == 0.0 {
+            // no point in updating gain
+            Some(top.weight)
+        } else {
+            obj.update_lazy_mut(top.node, &solset, &mut state)?
+        };
+
+        match updated_gain {
+            None => {}
+            Some(gain) => {
+                if !heap.is_empty() && gain < heap.peek().unwrap().weight {
+                    // updating the marginal gain caused the order of this element to be moved around
+                    heap.push(WeightedNode {
+                        node: top.node,
+                        weight: gain,
+                    });
+                    continue;
+                }
+            }
+        };
+
+        // if we got this far, we know that we have the real top
+        sol.push(top.node);
+        solset.insert(top.node.into());
+        obj.insert_lazy_mut(top.node, &mut state)?;
+        f += updated_gain.unwrap_or(top.weight);
+        // debug!(log, "benefit"; "f" => f, "actual" => obj.benefit(&solset, &state)?);
+        trace!(log, "selected element"; "node" => format!("{:?}", top.node), "objective value" => f);
+
+        // can't && i < k in a while let, unfortunately
+        i += 1;
+        if i >= k {
+            break;
+        }
+    }
+
+    info!(log, "greedy solution"; 
+          "f" => f);
+    Ok((f, sol, state))
+}
