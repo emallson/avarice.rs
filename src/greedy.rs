@@ -125,6 +125,21 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
     Ok((f, sol, state))
 }
 
+/// A lazy variant of `greedy` with no additional (implementation) requirements. However, the objective must be
+/// submodular to use this.
+///
+/// It operates by recording elements that have been added to the solution, but not yet been
+/// `insert()`-ed. These are termed "incomplete insertions". As long as the top element is
+/// independent of every incompletely inserted element, it is possible to continue delaying the
+/// insert call.
+///
+/// The benefit of using this method over `greedy` depends highly on the structure of dependencies:
+/// if high-value elements are dependent primarily on low-value elements, then this will eliminate
+/// most insertions. On the other hand, if the highest-value elements have strong dependencies,
+/// this will eliminate nearly none of the insertions.
+///
+/// # Panics
+/// Panics if the objective is not submodular.
 pub fn lazy_greedy<O: Objective>(obj: &O,
                                  k: usize,
                                  log: Option<Logger>)
@@ -218,6 +233,23 @@ pub fn lazy_greedy<O: Objective>(obj: &O,
 }
 
 
+/// An even lazier lazy greedy solver than `lazy_greedy`. This has both the submodularity
+/// requirement of `lazy_greedy` and additional implementation requirements (the objective must
+/// also implement `LazyObjective`), but is significantly more efficient in practice.
+///
+/// The difference between this and `lazy_greedy` is that instead of merely delaying insertions,
+/// this replaces them with *re-evaluations* of the marginal gain. If this can be implemented at
+/// least as efficiently as the above, there is virtually no cost to this.
+///
+/// One of the big wins of this method is the ability to avoid (expensive) reheap operations
+/// because only a single element is every reheaped at once, so `pop`/`insert` are used instead of
+/// reprocessing the heap.
+///
+/// **Note:** The state from `lazier_greedy` is not necessarily compatible with the states for
+/// non-lazy functions. Use caution when passing the resulting `State` struct to those functions.
+///
+/// # Panics
+/// Panics if the objective is not submodular.
 pub fn lazier_greedy<O: Objective + LazyObjective>(obj: &O,
                                                    k: usize,
                                                    log: Option<Logger>)

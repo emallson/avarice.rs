@@ -20,11 +20,19 @@ pub type Set<E> = FnvHashSet<E>;
 
 pub type ElementIterator<'a, O> = Box<Iterator<Item = <O as Objective>::Element> + 'a>;
 
+/// The curvature boundaries of an objective. Defaults to `Unbounded`.
+///
+/// This can be used to verify that any function taking an objective is actually applicable to that
+/// objective.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Curvature {
+    /// No known bounds
     Unbounded,
+    /// Bounded either below, above, or both.
     Bounded(Option<usize>, Option<usize>),
+    /// Curvature bounded above by 1
     Submodular,
+    /// Curvature bounded below by 1
     Supermodular,
 }
 
@@ -224,6 +232,29 @@ pub trait Objective: Sized {
     }
 }
 
+/// Lazy extension of `Objective`. While the same state type is used, state updates are handled
+/// independently. If you need two different kinds of state for each kind of update, consider using
+/// an enum-struct. For example:
+///
+/// ```
+/// #[derive(Clone, Debug)]
+/// pub enum State {
+///     Empty,
+///     Strict {
+///         foo: usize,
+///         bar: Vec<usize>,
+///     },
+///     Lazy {
+///         baz: f64,
+///     }
+/// }
+///
+/// impl Default for State {
+///     fn default() -> Self {
+///         State::Empty
+///     }
+/// }
+/// ```
 pub trait LazyObjective: Objective {
     /// Updates the marginal gain of `element`, returning it value after updating the state to
     /// reflect the insertion of `previous` elements.
@@ -236,5 +267,8 @@ pub trait LazyObjective: Objective {
                        -> Result<Option<f64>>;
 
     /// Update the state to preserve invariants upon insertion of `element`.
+    ///
+    /// This should do the least amount of work possible without making `update_lazy_mut` too
+    /// complex.
     fn insert_lazy_mut(&self, element: Self::Element, state: &mut Self::State) -> Result<()>;
 }

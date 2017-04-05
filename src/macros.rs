@@ -21,7 +21,7 @@
 ///     impl Arbitrary for MyObjective {
 ///         // ...
 ///     }
-///     validate(MyObjective);
+///     validate!(MyObjective);
 /// }
 /// ```
 #[macro_export]
