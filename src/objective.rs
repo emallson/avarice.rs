@@ -55,6 +55,8 @@ pub mod curvature {
     /// by the equation `f(S) = Σf(e)`. That is, the objective is exactly the sum of the weights of
     /// the elements of the set `S`.
     pub trait Modular: Bounded {}
+    impl<T: Modular> Submodular for T {}
+    impl<T: Modular> Supermodular for T {}
 }
 
 /// An objective to be optimized.
