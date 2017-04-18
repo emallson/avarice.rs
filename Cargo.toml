@@ -1,15 +1,16 @@
 [package]
 authors = ["J David Smith <emallson@atlanis.net>"]
 name = "avarice"
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 error-chain = "0.10.0"
 fnv = "1.0.5"
 rand = "0.3.15"
 rayon = "0.6.0"
-slog = "1.5.2"
-slog-stdlog = "1.1.0"
+slog = "~2.0"
+slog-stdlog = "~2.0.0-0.2"
+avarice-derive = { path = "avarice-derive" }
 
 [dev-dependencies]
 quickcheck = {version = "0.4.1", git="https://github.com/emallson/quickcheck.git"}

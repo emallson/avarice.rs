@@ -20,26 +20,41 @@ pub type Set<E> = FnvHashSet<E>;
 
 pub type ElementIterator<'a, O> = Box<Iterator<Item = <O as Objective>::Element> + 'a>;
 
-/// The curvature boundaries of an objective. Defaults to `Unbounded`.
-///
-/// This can be used to verify that any function taking an objective is actually applicable to that
-/// objective.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Curvature {
-    /// No known bounds
-    Unbounded,
-    /// Bounded either below, above, or both.
-    Bounded(Option<usize>, Option<usize>),
-    /// Curvature bounded above by 1
-    Submodular,
-    /// Curvature bounded below by 1
-    Supermodular,
-}
+pub mod curvature {
+    //! Marker traits for Curvature bounds.
+    //! These allow compile-time verification that an algorithm called on an `Objective` has its
+    //! curvature constraints satisfied.
+    //!
+    //! As a concrete example, the `greedy::lazier_greedy` method requires a `Submodular`
+    //! objective. Previously, this was done by checking an enum and panicking if it failed. Marker
+    //! traits move the error from runtime to compilation.
 
-impl Default for Curvature {
-    fn default() -> Self {
-        Curvature::Unbounded
+    /// An objective with fixed bounds that are not the (0, 1) of `Submodular` or (1, ∞) of
+    /// `Supermodular`.
+    ///
+    /// Ideally, this trait would be implemented automatically for any `Submodular` or
+    /// `Supermodular` type. This may be done with an `avarice-derive` crate in the future.
+    pub trait Bounded: super::Objective {
+        fn bounds() -> (Option<f64>, Option<f64>);
     }
+
+    /// A submodular objective, which satisfies `∀ S ⊆ T: f(S ∪ {e}) - f(S) ≥ f(T ∪ {e}) - f(T)` or (equivalently) has curvature bounded above by `1`.
+    ///
+    /// The `Bounded` implementation should return a fixed `(None, Some(1.0))`.
+    pub trait Submodular: Bounded {}
+
+    /// A supermodular objective, which satisfies `∀ S ⊆ T: f(S ∪ {e}) - f(S) ≤ f(T ∪ {e}) - f(T)` or (equivalently) has curvature bounded below by `1`.
+    ///
+    /// The `Bounded` implementation should return a fixed `(Some(1.0), None)`.
+    pub trait Supermodular: Bounded {}
+
+    /// A modular objective. The `Bounded` implementation should return a fixed `(Some(1.0),
+    /// Some(1.0))`.
+    ///
+    /// This trait is the least common. The semantics of this type of objective are best understood
+    /// by the equation `f(S) = Σf(e)`. That is, the objective is exactly the sum of the weights of
+    /// the elements of the set `S`.
+    pub trait Modular: Bounded {}
 }
 
 /// An objective to be optimized.
@@ -56,12 +71,6 @@ pub trait Objective: Sized {
     /// Holds any state that is tracked either to assist in correctness or to provide e.g.
     /// cacheing.
     type State: Default + Clone;
-
-    /// The curvature structure of the objective. Used for some optimizations, defaults to
-    /// `Unbounded` (which has no optimizations).
-    fn curv_bounds() -> Curvature {
-        Curvature::default()
-    }
 
     /// The domain of the solution.
     fn elements(&self) -> ElementIterator<Self>;

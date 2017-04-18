@@ -14,7 +14,7 @@
 //! implementation still includes an avoidable copy.
 use std::collections::BinaryHeap;
 use std::cmp::Ordering;
-use slog::{DrainExt, Logger};
+use slog::{Drain, Logger};
 use slog_stdlog::StdLog;
 use objective::*;
 use errors::*;
@@ -137,14 +137,11 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
 /// if high-value elements are dependent primarily on low-value elements, then this will eliminate
 /// most insertions. On the other hand, if the highest-value elements have strong dependencies,
 /// this will eliminate nearly none of the insertions.
-///
-/// # Panics
-/// Panics if the objective is not submodular.
-pub fn lazy_greedy<O: Objective>(obj: &O,
-                                 k: usize,
-                                 log: Option<Logger>)
-                                 -> Result<(f64, Vec<O::Element>, O::State)> {
-    assert!(O::curv_bounds() == Curvature::Submodular);
+pub fn lazy_greedy<O: Objective + curvature::Submodular>
+    (obj: &O,
+     k: usize,
+     log: Option<Logger>)
+     -> Result<(f64, Vec<O::Element>, O::State)> {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
     let mut state = O::State::default();
     let mut solset = Set::default();
@@ -250,11 +247,11 @@ pub fn lazy_greedy<O: Objective>(obj: &O,
 ///
 /// # Panics
 /// Panics if the objective is not submodular.
-pub fn lazier_greedy<O: Objective + LazyObjective>(obj: &O,
-                                                   k: usize,
-                                                   log: Option<Logger>)
-                                                   -> Result<(f64, Vec<O::Element>, O::State)> {
-    assert!(O::curv_bounds() == Curvature::Submodular);
+pub fn lazier_greedy<O: Objective + LazyObjective + curvature::Submodular>
+    (obj: &O,
+     k: usize,
+     log: Option<Logger>)
+     -> Result<(f64, Vec<O::Element>, O::State)> {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
     let mut state = O::State::default();
     let mut solset = Set::default();
