@@ -3,18 +3,8 @@
 //! any struct implementing `Objective`.
 use std::fmt::Debug;
 use std::hash::Hash;
-use rand::{Rng, thread_rng};
-use rand::distributions::{Range, IndependentSample};
 use errors::*;
 use fnv::FnvHashSet;
-
-#[derive(Copy, Clone, Debug)]
-pub enum SampleElement<E> {
-    Dependent(E),
-    NonDependent,
-}
-
-use self::SampleElement::*;
 
 pub type Set<E> = FnvHashSet<E>;
 
@@ -31,9 +21,6 @@ pub mod curvature {
 
     /// An objective with fixed bounds that are not the (0, 1) of `Submodular` or (1, ∞) of
     /// `Supermodular`.
-    ///
-    /// Ideally, this trait would be implemented automatically for any `Submodular` or
-    /// `Supermodular` type. This may be done with an `avarice-derive` crate in the future.
     pub trait Bounded: super::Objective {
         fn bounds() -> (Option<f64>, Option<f64>);
     }
@@ -124,7 +111,7 @@ pub trait Objective: Sized {
 
     /// The elements on which the marginal gain of `u` depends. The technical definition I have
     /// been using is based on the primal curvature (`nabla`): if `u` depends on `v`, then
-    /// `nabla(u, v, sol, state) == 1`.
+    /// `nabla(u, v, sol, state) != 1`.
     fn depends(&self, u: Self::Element, state: &Self::State) -> Result<ElementIterator<Self>>;
 
     /// Update the state tracked in `s` to reflect the insertion of `u` into the solution.
@@ -135,111 +122,6 @@ pub trait Objective: Sized {
         let mut state = s.clone();
         self.insert_mut(u, &mut state)?;
         Ok(state)
-    }
-
-    /// Uniformly sample a sequence of `k` elements from about element `u` consistent with initial
-    /// state `state`. *The state is not updated, so if the dependent set is state-dependent,
-    /// future elements may not be valid selections.*
-    fn sample_sequence(&self,
-                       u: Self::Element,
-                       k: usize,
-                       bias: Option<f64>,
-                       sol: &Set<Self::Element>,
-                       state: &Self::State)
-                       -> Result<Vec<SampleElement<Self::Element>>> {
-        let mut sample = Vec::with_capacity(k);
-        let mut deps = self.depends(u, state)?
-            .filter(|&v| !sol.contains(&v))
-            .collect::<Vec<_>>();
-        let mut rng = thread_rng();
-        rng.shuffle(&mut deps);
-
-        let bias = bias.unwrap_or_else(|| {
-            deps.len() as f64 / (self.elements().count() - sol.len()) as f64
-        });
-
-        let uniform = Range::new(0.0, 1.0);
-
-        for _ in 0..k {
-            if uniform.ind_sample(&mut rng) <= bias && !deps.is_empty() {
-                // take a dependent element
-                sample.push(Dependent(deps.pop().unwrap()));
-            } else {
-                sample.push(NonDependent);
-            }
-        }
-
-        Ok(sample)
-    }
-
-    /// Compute the total primal curvature of an element `u` after the first `k` elements of
-    /// `sequence` have been added. If the `sequence` does not have at least `k` elements,
-    /// `ErrorKind::SampleTooSmall` is returned.
-    fn gamma(&self,
-             u: Self::Element,
-             k: usize,
-             mut sol: Set<Self::Element>,
-             sequence: Vec<SampleElement<Self::Element>>,
-             mut state: Self::State)
-             -> Result<(f64, Set<Self::Element>, Self::State)> {
-        if sequence.len() < k {
-            return Err(ErrorKind::SampleTooSmall(sequence.len(), k).into());
-        }
-        let mut prod = 1f64;
-        for e in sequence.iter().take(k) {
-            prod *= match e {
-                &Dependent(v) => self.nabla(u, v, &sol, &state)?,
-                // proof of this relation is in the 2017 notebook, pg. 8-9
-                //
-                // the gist of it is that the non-dependence of x implies a pair of f_u(S \cup {x})
-                // = f_u(S)-style relations, which are used to show ∇(u, v | S) = ∇(u, v | S \cup
-                // {x}).
-                &NonDependent => 1f64,
-            };
-
-            if let &Dependent(v) = e {
-                self.insert_mut(v, &mut state)?;
-                sol.insert(v);
-            }
-        }
-
-        Ok((prod, sol, state))
-    }
-
-    /// Compute the sequence of total primal curvature values for `1..k` elements of `sequence`.
-    /// Unlike `gamma`, this does not return the final solution or state. `gamma(0|S)` is omitted
-    /// as it is constant `1`.
-    fn gamma_seq(&self,
-                 u: Self::Element,
-                 k: usize,
-                 mut sol: Set<Self::Element>,
-                 sequence: Vec<SampleElement<Self::Element>>,
-                 mut state: Self::State)
-                 -> Result<Vec<f64>> {
-        if sequence.len() < k {
-            return Err(ErrorKind::SampleTooSmall(sequence.len(), k).into());
-        }
-        let mut prod = 1f64;
-        let mut seq = Vec::with_capacity(k);
-        for e in sequence.iter().take(k) {
-            prod *= match e {
-                &Dependent(v) => self.nabla(u, v, &sol, &state)?,
-                // proof of this relation is in the 2017 notebook, pg. 8-9
-                //
-                // the gist of it is that the non-dependence of x implies a pair of f_u(S \cup {x})
-                // = f_u(S)-style relations, which are used to show ∇(u, v | S) = ∇(u, v | S \cup
-                // {x}).
-                &NonDependent => 1f64,
-            };
-
-            seq.push(prod);
-
-            if let &Dependent(v) = e {
-                self.insert_mut(v, &mut state)?;
-                sol.insert(v);
-            }
-        }
-        Ok(seq)
     }
 }
 
