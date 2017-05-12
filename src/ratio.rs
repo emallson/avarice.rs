@@ -85,28 +85,14 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
     fn choose<'a, T: 'a + Copy, I: IntoIterator<Item = &'a T>, R: Rng>(rng: &mut R,
                                                                        iter: I)
                                                                        -> Option<T> {
-        let res = sample(rng, iter, 1);
-
-        if res.len() == 1 { Some(*res[0]) } else { None }
-    }
-
-    use std::hash::Hash;
-    fn rejection<'a, T: 'a + Copy + Eq + Hash, R: Rng>(rng: &mut R,
-                                                       domain: &Vec<T>,
-                                                       reject: &FnvHashSet<T>)
-                                                       -> Option<T> {
-        loop {
-            if let Some(choice) = choose(rng, domain) {
-                if !reject.contains(&choice) {
-                    return Some(choice);
-                }
-            } else {
-                return None;
-            }
+        let mut iter = iter.into_iter();
+        if iter.size_hint().1.unwrap() == 0 {
+            return None;
         }
+        let range = Range::new(0, iter.size_hint().1.unwrap());
+        iter.nth(range.ind_sample(rng)).cloned()
     }
 
-    let elements = obj.elements().collect::<Vec<_>>();
     T.push(Dependent(sample(&mut rng, obj.elements(), 1)[0]));
 
     let deps = |t, supermodular| if let Dependent(t) = t {
@@ -120,7 +106,10 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
     };
 
     let element_count = obj.elements().count();
-    let mut depends = deps(T[0], false)?.collect::<FnvHashSet<_>>();
+    let mut independent = obj.elements().collect::<FnvHashSet<_>>();
+    for dep in deps(T[0], false)? {
+        independent.remove(&dep);
+    }
     let mut superdepends = deps(T[0], true)?.collect::<FnvHashSet<_>>();
 
     for i in 1..k {
@@ -132,22 +121,24 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
                         // no more independent elements either
                         return Err(ErrorKind::InsufficientElements(k, i - 1).into());
                     } else {
-                        Independent(rejection(&mut rng, &elements, &depends).unwrap())
+                        Independent(choose(&mut rng, &independent).unwrap())
                     }
                 }
                 Some(x) => Dependent(x),
             }
         } else {
             // independent
-            if depends.len() + T.len() == element_count {
+            if independent.len() == 0 {
                 // no more independent elements
                 Dependent(choose(&mut rng, &superdepends).ok_or(Error::from(ErrorKind::InsufficientElements(k, i - 1)))?)
             } else {
-                Independent(rejection(&mut rng, &elements, &depends).unwrap())
+                Independent(choose(&mut rng, &independent).unwrap())
             }
         };
 
-        depends.extend(deps(x, false)?);
+        for dep in deps(x, false)? {
+            independent.remove(&dep);
+        }
         superdepends.extend(deps(x, true)?);
 
         if let Dependent(_) = x {
@@ -161,7 +152,7 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
                 Independent(t) => t,
             };
             superdepends.remove(&t);
-            depends.insert(t);
+            independent.remove(&t);
         }
     }
 
