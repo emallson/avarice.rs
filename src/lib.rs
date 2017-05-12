@@ -18,6 +18,7 @@ extern crate avarice_derive;
 
 pub mod greedy;
 pub mod objective;
+pub mod ratio;
 pub mod errors;
 pub mod macros;
 

@@ -1,7 +1,7 @@
 [package]
 authors = ["J David Smith <emallson@atlanis.net>"]
 name = "avarice"
-version = "0.2.0"
+version = "0.3.0"
 
 [dependencies]
 error-chain = "0.10.0"
@@ -14,4 +14,3 @@ avarice-derive = { path = "avarice-derive" }
 
 [dev-dependencies]
 quickcheck = {version = "0.4.1", git="https://github.com/emallson/quickcheck.git"}
-

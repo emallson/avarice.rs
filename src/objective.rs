@@ -113,6 +113,17 @@ pub trait Objective: Sized {
     /// been using is based on the primal curvature (`nabla`): if `u` depends on `v`, then
     /// `nabla(u, v, sol, state) != 1`.
     fn depends(&self, u: Self::Element, state: &Self::State) -> Result<ElementIterator<Self>>;
+    /// Same as `depends`, except that `nabla(u, v, sol, state) > 1`.
+    ///
+    /// Not all objectives need to implement this. If it is not implemented, calling it panics (via
+    /// `unimplemented!()`)
+    #[allow(unused_variables)]
+    fn supermodular_depends(&self,
+                            u: Self::Element,
+                            state: &Self::State)
+                            -> Result<ElementIterator<Self>> {
+        unimplemented!()
+    }
 
     /// Update the state tracked in `s` to reflect the insertion of `u` into the solution.
     fn insert_mut(&self, u: Self::Element, s: &mut Self::State) -> Result<()>;
