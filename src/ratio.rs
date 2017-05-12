@@ -11,7 +11,7 @@ use std::iter::empty;
 
 #[derive(Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum SampleElement<Element> {
-    Independent,
+    Independent(Element),
     Dependent(Element),
 }
 
@@ -71,15 +71,10 @@ pub fn lambda<O: Objective>(obj: &O,
 
 /// Construct a sample `T ~ D_{p,k}` where `p = bias` and `k` is given.
 ///
-/// Different settings are intended for different objective types.
-///
-/// Submodular: bias = 0, supermodular = false (`D_{0,k}`)
-/// Supermodular: bias = 1, supermodular = false (`D_{1,k}`)
-/// Neither: bias = 1, supermodular = true (`D^+_{1,k}`)
+/// For worst case, bias should be 1.
 #[allow(non_snake_case)]
 pub fn biased_dependency_sample<O: Objective>(obj: &O,
                                               bias: f64,
-                                              supermodular: bool,
                                               k: usize)
                                               -> Result<Vec<SampleElement<O::Element>>> {
     use ratio::SampleElement::*;
@@ -95,9 +90,26 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
         if res.len() == 1 { Some(*res[0]) } else { None }
     }
 
+    use std::hash::Hash;
+    fn rejection<'a, T: 'a + Copy + Eq + Hash, R: Rng>(rng: &mut R,
+                                                       domain: &Vec<T>,
+                                                       reject: &FnvHashSet<T>)
+                                                       -> Option<T> {
+        loop {
+            if let Some(choice) = choose(rng, domain) {
+                if !reject.contains(&choice) {
+                    return Some(choice);
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+
+    let elements = obj.elements().collect::<Vec<_>>();
     T.push(Dependent(sample(&mut rng, obj.elements(), 1)[0]));
 
-    let deps = |t| if let Dependent(t) = t {
+    let deps = |t, supermodular| if let Dependent(t) = t {
         if supermodular {
             obj.supermodular_depends(t, &O::State::default())
         } else {
@@ -108,24 +120,19 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
     };
 
     let element_count = obj.elements().count();
-    let mut depends = deps(T[0])?.collect::<FnvHashSet<_>>();
+    let mut depends = deps(T[0], false)?.collect::<FnvHashSet<_>>();
+    let mut superdepends = deps(T[0], true)?.collect::<FnvHashSet<_>>();
 
     for i in 1..k {
-        for &t in &T {
-            if let Dependent(t) = t {
-                depends.remove(&t);
-            }
-        }
-
         let x = if uniform.ind_sample(&mut rng) <= bias {
             // dependent
-            match choose(&mut rng, &depends) {
+            match choose(&mut rng, &superdepends) {
                 None => {
-                    if depends.len() + T.len() == element_count {
+                    if superdepends.len() + T.len() == element_count {
                         // no more independent elements either
                         return Err(ErrorKind::InsufficientElements(k, i - 1).into());
                     } else {
-                        Independent
+                        Independent(rejection(&mut rng, &elements, &depends).unwrap())
                     }
                 }
                 Some(x) => Dependent(x),
@@ -134,18 +141,28 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
             // independent
             if depends.len() + T.len() == element_count {
                 // no more independent elements
-                Dependent(choose(&mut rng, &depends).ok_or(Error::from(ErrorKind::InsufficientElements(k, i - 1)))?)
+                Dependent(choose(&mut rng, &superdepends).ok_or(Error::from(ErrorKind::InsufficientElements(k, i - 1)))?)
             } else {
-                Independent
+                Independent(rejection(&mut rng, &elements, &depends).unwrap())
             }
         };
 
-        depends.extend(deps(x)?);
+        depends.extend(deps(x, false)?);
+        superdepends.extend(deps(x, true)?);
 
         if let Dependent(_) = x {
             assert!(!T.contains(&x));
         }
         T.push(x);
+
+        for &t in &T {
+            let t = match t {
+                Dependent(t) => t,
+                Independent(t) => t,
+            };
+            superdepends.remove(&t);
+            depends.insert(t);
+        }
     }
 
     assert!(T.len() == k);
@@ -216,7 +233,6 @@ pub fn sample_lambda<O: Objective + Sync>(obj: &O,
                                           sol: &FnvHashSet<O::Element>,
                                           state: O::State,
                                           bias: f64,
-                                          supermodular: bool,
                                           k: usize,
                                           num_samples: usize)
                                           -> Result<Vec<f64>>
@@ -228,7 +244,7 @@ pub fn sample_lambda<O: Objective + Sync>(obj: &O,
     (0..num_samples)
         .into_par_iter()
         .map(|_| {
-            let sample = biased_dependency_sample(obj, bias, supermodular, k)?;
+            let sample = biased_dependency_sample(obj, bias, k)?;
             lambda(obj, &sample, sol, &state)
         })
         .collect_into(&mut sample_vec);
@@ -240,7 +256,6 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
                                             sol: &FnvHashSet<O::Element>,
                                             state: O::State,
                                             bias: f64,
-                                            supermodular: bool,
                                             k: usize,
                                             eps: f64,
                                             delta: f64,
@@ -260,7 +275,7 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
     let num_samples = num_samples.ceil() as usize;
     info!(log, "constructing samples"; "num_samples" => num_samples);
 
-    let samples = sample_lambda(obj, sol, state, bias, supermodular, k, num_samples)?;
+    let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
     assert!(samples.len() == num_samples);
     let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
 
