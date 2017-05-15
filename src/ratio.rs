@@ -285,3 +285,40 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
     info!(log, "estimating cdf"; "η" => eta);
     empirical_cdf(&samples, delta, eta, Some(log.new(o!("section" => "cdf"))))
 }
+
+
+pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
+                                                      sol: &FnvHashSet<O::Element>,
+                                                      state: O::State,
+                                                      bias: f64,
+                                                      k: usize,
+                                                      delta: f64,
+                                                      num_samples: usize,
+                                                      log: Option<Logger>)
+                                                      -> Result<f64>
+    where O::Element: Send + Sync,
+          O::State: Sync
+{
+    let log = log.unwrap_or_else(|| Logger::root(slog_stdlog::StdLog.fuse(), o!()));
+
+    info!(log, "constructing samples"; "num_samples" => num_samples);
+
+    let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
+    assert!(samples.len() == num_samples);
+    let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
+
+    if num_nans > 0 {
+        crit!(log, "samples contain NaN / infinite values"; "count" => num_nans);
+        panic!("samples contain NaN / infinite values");
+    }
+
+    let mean = samples.iter().sum::<f64>() / samples.len() as f64;
+    let variance = samples.iter().map(|xi| (xi - mean).powi(2)).sum::<f64>() / samples.len() as f64;
+    let stddev = variance.sqrt();
+    let min = samples.iter().fold(f64::INFINITY, |min, xi| xi.min(min));
+    let max = samples.iter().fold(0.0, |max, xi| xi.max(max));
+
+    info!(log, "done sampling"; "mean" => mean, "variance" => variance, "std. dev." => stddev, "min" => min, "max" => max);
+    let factor = (1.0 / (1.0 - delta)).sqrt(); // d = 1 - 1/k^2 -> 1/k^2 = 1 - d -> k^2 = 1/(1 - d) -> sqrt(1/(1 - d))
+    Ok(mean + factor * stddev)
+}
