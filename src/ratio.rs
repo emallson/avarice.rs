@@ -275,7 +275,8 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
     }
 
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let variance = samples.iter().map(|xi| (xi - mean).powi(2)).sum::<f64>() / samples.len() as f64;
+    let variance = samples.iter().map(|xi| (xi - mean).powi(2)).sum::<f64>() /
+                   (samples.len() as f64 - 1.0);
     let min = samples.iter().fold(f64::INFINITY, |min, xi| xi.min(min));
     let max = samples.iter().fold(0.0, |max, xi| xi.max(max));
 
@@ -308,6 +309,7 @@ pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
 
     let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
     assert!(samples.len() == num_samples);
+    info!(log, #"no_term", "sampled Λ"; "samples" => format!("{:?}", samples));
     let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
 
     if num_nans > 0 {
@@ -316,7 +318,8 @@ pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
     }
 
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let variance = samples.iter().map(|xi| (xi - mean).powi(2)).sum::<f64>() / samples.len() as f64;
+    let variance = samples.iter().map(|xi| (xi - mean).powi(2)).sum::<f64>() /
+                   (samples.len() as f64 - 1.0);
     let stddev = variance.sqrt();
     let min = samples.iter().fold(f64::INFINITY, |min, xi| xi.min(min));
     let max = samples.iter().fold(0.0, |max, xi| xi.max(max));
@@ -324,4 +327,113 @@ pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
     info!(log, "done sampling"; "mean" => mean, "variance" => variance, "std. dev." => stddev, "min" => min, "max" => max);
     let factor = (1.0 / (1.0 - delta)).sqrt(); // d = 1 - 1/k^2 -> 1/k^2 = 1 - d -> k^2 = 1/(1 - d) -> sqrt(1/(1 - d))
     Ok(mean + factor * stddev)
+}
+
+pub fn estimate_lambda_saw<O: Objective + Sync>(obj: &O,
+                                                sol: &FnvHashSet<O::Element>,
+                                                state: O::State,
+                                                bias: f64,
+                                                k: usize,
+                                                delta: f64,
+                                                eta: f64,
+                                                num_samples: usize,
+                                                log: Option<Logger>)
+                                                -> Result<f64>
+    where O::Element: Send + Sync,
+          O::State: Sync
+{
+    let log = log.unwrap_or_else(|| Logger::root(slog_stdlog::StdLog.fuse(), o!()));
+
+    info!(log, "constructing samples"; "num_samples" => num_samples);
+
+    let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
+    assert!(samples.len() == num_samples);
+    info!(log, #"no_term", "sampled Λ"; "samples" => format!("{:?}", samples));
+    let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
+
+    if num_nans > 0 {
+        crit!(log, "samples contain NaN / infinite values"; "count" => num_nans);
+        panic!("samples contain NaN / infinite values");
+    }
+
+    let mean = samples.iter().sum::<f64>() / samples.len() as f64;
+    let variance = samples.iter().map(|xi| (xi - mean).powi(2)).sum::<f64>() /
+                   (samples.len() as f64 - 1.0);
+    let stddev = variance.sqrt();
+    let min = samples.iter().fold(f64::INFINITY, |min, xi| xi.min(min));
+    let max = samples.iter().fold(0.0, |max, xi| xi.max(max));
+
+    info!(log, "done sampling"; "mean" => mean, "variance" => variance, "std. dev." => stddev, "min" => min, "max" => max);
+    let r = num_samples as f64;
+    let factor = binary_search(|lambda| {
+                                   1.0 -
+                                   1.0 / (r + 1.0) *
+                                   ((r + 1.0) / r * ((r - 1.0) / lambda.powi(2) + 1.0)).floor()
+                               },
+                               (1.0, 100.0),
+                               delta,
+                               eta,
+                               Some(log));
+    let factor = match factor {
+        Ok(f) => Ok(f),
+        Err(Error(ErrorKind::NoConvergence(_, max, _), _)) => Ok(max),
+        err => err,
+    }?;
+    Ok(mean + factor * ((num_samples as f64 + 1.0) / num_samples as f64 * variance).sqrt())
+}
+
+/// Does binary search to find the smallest `x` such that f(x) >= goal.
+///
+/// Terminates when the bounds of the binary search (initially the `(min, max)` given) satisfy `max
+/// - min ≤ η`.
+fn binary_search<F>(f: F,
+                    (mut min, mut max): (f64, f64),
+                    goal: f64,
+                    gap: f64,
+                    log: Option<Logger>)
+                    -> Result<f64>
+    where F: Fn(f64) -> f64
+{
+    let log = log.unwrap_or_else(|| Logger::root(slog_stdlog::StdLog.fuse(), o!()));
+    const ITERS_MAX: usize = 100;
+    assert!(max.is_finite());
+    assert!(min.is_finite());
+
+    let mut iters = 0;
+    loop {
+        let x = (max + min) / 2.0;
+        assert!(x.is_finite());
+        debug!(log, "testing"; "x" => x, "gap" => max - min, "max" => max, "min" => min);
+
+        let p = f(x);
+
+        if p >= goal && max - min <= gap {
+            info!(log, "found x with gap satisfied"; "x" => x, "gap" => max - min, "p" => p);
+            return Ok(x);
+        } else if max - min <= gap {
+            // gotten small enough
+            let p = f(max);
+            if p < goal {
+                crit!(log, "max does not satisfy f(max) >= goal"; "max" => max, "f(max)" => p, "goal" => goal);
+                assert!(p >= goal);
+            }
+            info!(log, "gap satisfied, but x not found. using max"; "x" => max, "gap" => max - min, "p" => p);
+            return Ok(max);
+        }
+
+        if p >= goal {
+            debug!(log, "p >= δ"; "p" => p);
+            // decrease max
+            max = x;
+        } else {
+            debug!(log, "p < δ"; "p" => p);
+            // increase min
+            min = x;
+        }
+        iters += 1;
+        if iters > ITERS_MAX {
+            crit!(log, "binary search failed to converge (likely due to loss of precision from an abnormal number of ζ events)"; "min" => min, "max" => max, "gap" => max - min, "η" => gap);
+            return Err(ErrorKind::NoConvergence(min, max, iters).into());
+        }
+    }
 }
