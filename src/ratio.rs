@@ -68,7 +68,6 @@ pub fn lambda<O: Objective>(obj: &O,
     Ok(sum)
 }
 
-
 /// Construct a sample `T ~ D_{p,k}` where `p = bias` and `k` is given.
 ///
 /// For worst case, bias should be 1.
@@ -283,7 +282,11 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
     info!(log, "done sampling"; "mean" => mean, "variance" => variance, "min" => min, "max" => max);
 
     info!(log, "estimating cdf"; "η" => eta);
-    empirical_cdf(&samples, delta, eta, Some(log.new(o!("section" => "cdf"))))
+    match empirical_cdf(&samples, delta, eta, Some(log.new(o!("section" => "cdf")))) {
+        Ok(f) => Ok(f),
+        Err(Error(ErrorKind::NoConvergence(_, max, _), _)) => Ok(max),
+        err => err,
+    }
 }
 
 
