@@ -47,8 +47,8 @@ fn expand_bounds(ast: &syn::DeriveInput, ty: Ident, low: Ident, high: Ident) -> 
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     quote! {
-        impl #impl_generics ::objective::curvature::#ty for #name #ty_generics #where_clause {}
-        impl #impl_generics ::objective::curvature::Bounded for #name #ty_generics #where_clause {
+        impl #impl_generics ::avarice::objective::curvature::#ty for #name #ty_generics #where_clause {}
+        impl #impl_generics ::avarice::objective::curvature::Bounded for #name #ty_generics #where_clause {
             fn bounds() -> (Option<f64>, Option<f64>) {
                 (#low, #high)
             }
