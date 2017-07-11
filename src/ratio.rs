@@ -68,6 +68,28 @@ pub fn lambda<O: Objective>(obj: &O,
     Ok(sum)
 }
 
+pub fn unbiased_sample<O: Objective>(obj: &O, k: usize) -> Result<Vec<SampleElement<O::Element>>> {
+    let mut rng = thread_rng();
+    let mut T = Vec::with_capacity(k);
+
+    fn choose<'a, T: 'a + Copy, I: IntoIterator<Item = &'a T>, R: Rng>(rng: &mut R,
+                                                                       iter: I)
+                                                                       -> Option<T> {
+        let mut iter = iter.into_iter();
+        if iter.size_hint().1.unwrap() == 0 {
+            return None;
+        }
+        let range = Range::new(0, iter.size_hint().1.unwrap());
+        iter.nth(range.ind_sample(rng)).cloned()
+    }
+
+    for _ in 0..k {
+        T.push(Dependent(sample(&mut rng, obj.elements(), 1)[0]));
+    }
+
+    Ok(T)
+}
+
 /// Construct a sample `T ~ D_{p,k}` where `p = bias` and `k` is given.
 ///
 /// For worst case, bias should be 1.
@@ -222,7 +244,7 @@ fn empirical_cdf(samples: &Vec<f64>, delta: f64, gap: f64, log: Option<Logger>) 
 pub fn sample_lambda<O: Objective + Sync>(obj: &O,
                                           sol: &FnvHashSet<O::Element>,
                                           state: O::State,
-                                          bias: f64,
+                                          bias: Option<f64>,
                                           k: usize,
                                           num_samples: usize)
                                           -> Result<Vec<f64>>
@@ -234,7 +256,11 @@ pub fn sample_lambda<O: Objective + Sync>(obj: &O,
     (0..num_samples)
         .into_par_iter()
         .map(|_| {
-            let sample = biased_dependency_sample(obj, bias, k)?;
+            let sample = if let Some(bias) = bias {
+                biased_dependency_sample(obj, bias, k)?
+            } else {
+                unbiased_sample(obj, k)?
+            };
             lambda(obj, &sample, sol, &state)
         })
         .collect_into(&mut sample_vec);
@@ -245,7 +271,7 @@ pub fn sample_lambda<O: Objective + Sync>(obj: &O,
 pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
                                             sol: &FnvHashSet<O::Element>,
                                             state: O::State,
-                                            bias: f64,
+                                            bias: Option<f64>,
                                             k: usize,
                                             eps: f64,
                                             delta: f64,
@@ -294,7 +320,7 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
 pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
                                                       sol: &FnvHashSet<O::Element>,
                                                       state: O::State,
-                                                      bias: f64,
+                                                      bias: Option<f64>,
                                                       k: usize,
                                                       delta: f64,
                                                       num_samples: usize,
@@ -332,7 +358,7 @@ pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
 pub fn estimate_lambda_saw<O: Objective + Sync>(obj: &O,
                                                 sol: &FnvHashSet<O::Element>,
                                                 state: O::State,
-                                                bias: f64,
+                                                bias: Option<f64>,
                                                 k: usize,
                                                 delta: f64,
                                                 eta: f64,
