@@ -7,7 +7,7 @@ version = "0.3.0"
 error-chain = "0.10.0"
 fnv = "1.0.5"
 rand = "0.3.15"
-rayon = "0.6.0"
+rayon = "0.8.2"
 slog = "~2.0"
 slog-stdlog = "~2.0.0-0.2"
 avarice-derive = { path = "avarice-derive" }
