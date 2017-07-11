@@ -84,7 +84,7 @@ pub fn unbiased_sample<O: Objective>(obj: &O, k: usize) -> Result<Vec<SampleElem
     }
 
     for _ in 0..k {
-        T.push(Dependent(sample(&mut rng, obj.elements(), 1)[0]));
+        T.push(SampleElement::Dependent(sample(&mut rng, obj.elements(), 1)[0]));
     }
 
     Ok(T)

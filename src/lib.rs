@@ -20,3 +20,4 @@ pub mod greedy;
 pub mod objective;
 pub mod errors;
 pub mod macros;
+pub mod ratio;
