@@ -1,7 +1,7 @@
 use errors::*;
 use objective::*;
 use fnv::FnvHashSet;
-use rand::{Rng, thread_rng, sample};
+use rand::{Rng, sample};
 use rand::distributions::{IndependentSample, Range};
 use slog::{Drain, Logger};
 use slog_stdlog;
@@ -68,23 +68,15 @@ pub fn lambda<O: Objective>(obj: &O,
     Ok(sum)
 }
 
-pub fn unbiased_sample<O: Objective>(obj: &O, k: usize) -> Result<Vec<SampleElement<O::Element>>> {
-    let mut rng = thread_rng();
+pub fn unbiased_sample<O: Objective, R: Rng>(rng: &mut R,
+                                             obj: &O,
+                                             k: usize)
+                                             -> Result<Vec<SampleElement<O::Element>>> {
+    #[allow(non_snake_case)]
     let mut T = Vec::with_capacity(k);
 
-    fn choose<'a, T: 'a + Copy, I: IntoIterator<Item = &'a T>, R: Rng>(rng: &mut R,
-                                                                       iter: I)
-                                                                       -> Option<T> {
-        let mut iter = iter.into_iter();
-        if iter.size_hint().1.unwrap() == 0 {
-            return None;
-        }
-        let range = Range::new(0, iter.size_hint().1.unwrap());
-        iter.nth(range.ind_sample(rng)).cloned()
-    }
-
     for _ in 0..k {
-        T.push(SampleElement::Dependent(sample(&mut rng, obj.elements(), 1)[0]));
+        T.push(SampleElement::Dependent(sample(rng, obj.elements(), 1)[0]));
     }
 
     Ok(T)
@@ -94,12 +86,12 @@ pub fn unbiased_sample<O: Objective>(obj: &O, k: usize) -> Result<Vec<SampleElem
 ///
 /// For worst case, bias should be 1.
 #[allow(non_snake_case)]
-pub fn biased_dependency_sample<O: Objective>(obj: &O,
-                                              bias: f64,
-                                              k: usize)
-                                              -> Result<Vec<SampleElement<O::Element>>> {
+pub fn biased_dependency_sample<O: Objective, R: Rng>(rng: &mut R,
+                                                      obj: &O,
+                                                      bias: f64,
+                                                      k: usize)
+                                                      -> Result<Vec<SampleElement<O::Element>>> {
     use ratio::SampleElement::*;
-    let mut rng = thread_rng();
     let mut T = Vec::with_capacity(k);
     let uniform = Range::new(0.0, 1.0);
 
@@ -114,7 +106,7 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
         iter.nth(range.ind_sample(rng)).cloned()
     }
 
-    T.push(Dependent(sample(&mut rng, obj.elements(), 1)[0]));
+    T.push(Dependent(sample(rng, obj.elements(), 1)[0]));
 
     let deps = |t, supermodular| if let Dependent(t) = t {
         if supermodular {
@@ -134,15 +126,15 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
     let mut superdepends = deps(T[0], true)?.collect::<FnvHashSet<_>>();
 
     for i in 1..k {
-        let x = if uniform.ind_sample(&mut rng) <= bias {
+        let x = if uniform.ind_sample(rng) <= bias {
             // dependent
-            match choose(&mut rng, &superdepends) {
+            match choose(rng, &superdepends) {
                 None => {
                     if superdepends.len() + T.len() == element_count {
                         // no more independent elements either
                         return Err(ErrorKind::InsufficientElements(k, i - 1).into());
                     } else {
-                        Independent(choose(&mut rng, &independent).unwrap())
+                        Independent(choose(rng, &independent).unwrap())
                     }
                 }
                 Some(x) => Dependent(x),
@@ -151,9 +143,9 @@ pub fn biased_dependency_sample<O: Objective>(obj: &O,
             // independent
             if independent.len() == 0 {
                 // no more independent elements
-                Dependent(choose(&mut rng, &superdepends).ok_or(Error::from(ErrorKind::InsufficientElements(k, i - 1)))?)
+                Dependent(choose(rng, &superdepends).ok_or(Error::from(ErrorKind::InsufficientElements(k, i - 1)))?)
             } else {
-                Independent(choose(&mut rng, &independent).unwrap())
+                Independent(choose(rng, &independent).unwrap())
             }
         };
 
@@ -241,13 +233,14 @@ fn empirical_cdf(samples: &Vec<f64>, delta: f64, gap: f64, log: Option<Logger>) 
     }
 }
 
-pub fn sample_lambda<O: Objective + Sync>(obj: &O,
-                                          sol: &FnvHashSet<O::Element>,
-                                          state: O::State,
-                                          bias: Option<f64>,
-                                          k: usize,
-                                          num_samples: usize)
-                                          -> Result<Vec<f64>>
+pub fn sample_lambda<O: Objective + Sync, R: Rng, RF: Fn() -> R + Sync>(rng_fn: RF,
+                                                                 obj: &O,
+                                                                 sol: &FnvHashSet<O::Element>,
+                                                                 state: O::State,
+                                                                 bias: Option<f64>,
+                                                                 k: usize,
+                                                                 num_samples: usize)
+                                                                 -> Result<Vec<f64>>
     where O::Element: Send + Sync,
           O::State: Sync
 {
@@ -257,9 +250,9 @@ pub fn sample_lambda<O: Objective + Sync>(obj: &O,
         .into_par_iter()
         .map(|_| {
             let sample = if let Some(bias) = bias {
-                biased_dependency_sample(obj, bias, k)?
+                biased_dependency_sample(&mut rng_fn(), obj, bias, k)?
             } else {
-                unbiased_sample(obj, k)?
+                unbiased_sample(&mut rng_fn(), obj, k)?
             };
             lambda(obj, &sample, sol, &state)
         })
@@ -268,7 +261,8 @@ pub fn sample_lambda<O: Objective + Sync>(obj: &O,
     sample_vec.into_iter().collect::<Result<Vec<_>>>()
 }
 
-pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
+pub fn estimate_lambda<O: Objective + Sync, R: Rng, RF: Fn() -> R + Sync>(rng_fn: RF,
+                                                                          obj: &O,
                                             sol: &FnvHashSet<O::Element>,
                                             state: O::State,
                                             bias: Option<f64>,
@@ -291,7 +285,7 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
     let num_samples = num_samples.ceil() as usize;
     info!(log, "constructing samples"; "num_samples" => num_samples);
 
-    let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
+    let samples = sample_lambda(rng_fn, obj, sol, state, bias, k, num_samples)?;
     assert!(samples.len() == num_samples);
     let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
 
@@ -317,15 +311,17 @@ pub fn estimate_lambda<O: Objective + Sync>(obj: &O,
 }
 
 
-pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
-                                                      sol: &FnvHashSet<O::Element>,
-                                                      state: O::State,
-                                                      bias: Option<f64>,
-                                                      k: usize,
-                                                      delta: f64,
-                                                      num_samples: usize,
-                                                      log: Option<Logger>)
-                                                      -> Result<f64>
+pub fn estimate_lambda_chebyshev<O: Objective + Sync, R: Rng, RF: Fn() -> R + Sync>
+    (rng_fn: RF,
+     obj: &O,
+     sol: &FnvHashSet<O::Element>,
+     state: O::State,
+     bias: Option<f64>,
+     k: usize,
+     delta: f64,
+     num_samples: usize,
+     log: Option<Logger>)
+     -> Result<f64>
     where O::Element: Send + Sync,
           O::State: Sync
 {
@@ -333,7 +329,7 @@ pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
 
     info!(log, "constructing samples"; "num_samples" => num_samples);
 
-    let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
+    let samples = sample_lambda(rng_fn, obj, sol, state, bias, k, num_samples)?;
     assert!(samples.len() == num_samples);
     info!(log, #"no_term", "sampled Λ"; "samples" => format!("{:?}", samples));
     let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
@@ -355,7 +351,8 @@ pub fn estimate_lambda_chebyshev<O: Objective + Sync>(obj: &O,
     Ok(mean + factor * stddev)
 }
 
-pub fn estimate_lambda_saw<O: Objective + Sync>(obj: &O,
+pub fn estimate_lambda_saw<O: Objective + Sync, R: Rng, RF: Fn() -> R + Sync>(rng_fn: RF,
+                                                                                obj: &O,
                                                 sol: &FnvHashSet<O::Element>,
                                                 state: O::State,
                                                 bias: Option<f64>,
@@ -372,7 +369,7 @@ pub fn estimate_lambda_saw<O: Objective + Sync>(obj: &O,
 
     info!(log, "constructing samples"; "num_samples" => num_samples);
 
-    let samples = sample_lambda(obj, sol, state, bias, k, num_samples)?;
+    let samples = sample_lambda(rng_fn, obj, sol, state, bias, k, num_samples)?;
     assert!(samples.len() == num_samples);
     info!(log, #"no_term", "sampled Λ"; "samples" => format!("{:?}", samples));
     let num_nans: usize = samples.iter().filter(|&f| f.is_nan() || f.is_infinite()).count();
