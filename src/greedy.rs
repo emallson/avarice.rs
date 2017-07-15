@@ -337,7 +337,7 @@ pub fn lazier_greedy<O: Objective + LazyObjective + curvature::Submodular>
 /// then there is no `S' ⊇ S` for which `C(S', x) = true`. This condition holds for matroids and
 /// independence systems, which cover the vast majority of constraint types we are interested in.
 pub fn lazier_greedy_constrained<O: Objective + LazyObjective + curvature::Submodular,
-                                 F: Fn(&[O::Element], O::Element) -> bool>
+                                 F: Fn(&Vec<O::Element>, O::Element, &O::State) -> bool>
     (obj: &O,
      k: usize,
      constraint: F,
@@ -380,7 +380,7 @@ pub fn lazier_greedy_constrained<O: Objective + LazyObjective + curvature::Submo
     let mut sol = Vec::with_capacity(k);
     let mut i = 0;
     while let Some(top) = heap.pop() {
-        if !constraint(&sol, top.node) {
+        if !constraint(&sol, top.node, &state) {
             // adding this to the solution violates the constraints, continue onward
             // since this is simple greedy, we know that we will never be able add this element to
             // the solution.
