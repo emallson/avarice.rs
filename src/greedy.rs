@@ -329,3 +329,100 @@ pub fn lazier_greedy<O: Objective + LazyObjective + curvature::Submodular>
           "f" => f);
     Ok((f, sol, state))
 }
+
+/// Constrained version of `lazier_greedy`
+///
+/// The `constraint` function `C(S, x) -> bool` should return `true` if adding `x` to `S` would
+/// produce a solution that satisfies the constraints. It is assumed that if `C(S, x) = false`,
+/// then there is no `S' ⊇ S` for which `C(S', x) = true`. This condition holds for matroids and
+/// independence systems, which cover the vast majority of constraint types we are interested in.
+pub fn lazier_greedy_constrained<O: Objective + LazyObjective + curvature::Submodular,
+                                 F: Fn(&[O::Element], O::Element) -> bool>
+    (obj: &O,
+     k: usize,
+     constraint: F,
+     log: Option<Logger>)
+     -> Result<(f64, Vec<O::Element>, O::State)> {
+    let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
+    let mut state = O::State::default();
+    let mut solset = Set::default();
+    // an insertion is *incomplete* if it has been added to the solution, but it `insert` has not
+    // been called for it to update the state.
+    fn reheap<O: Objective>(sol: &Set<O::Element>,
+                            obj: &O,
+                            state: &O::State,
+                            prior: BinaryHeap<WeightedNode<O>>,
+                            elements: Set<O::Element>)
+                            -> Result<BinaryHeap<WeightedNode<O>>> {
+        prior.into_iter()
+            .filter(|ref we| !elements.contains(&we.node))
+            .map(|we| Ok(we))
+            .chain(elements.iter().cloned().map(|e| {
+                let w = obj.delta(e, &sol, &state)?;
+                Ok(WeightedNode {
+                    node: e,
+                    weight: w,
+                })
+            }))
+            .collect()
+    }
+
+    let elements = obj.elements().collect::<Set<_>>();
+    debug!(log, "initializing heap");
+    let mut heap = reheap(&solset,
+                          obj,
+                          &state,
+                          BinaryHeap::with_capacity(elements.len()),
+                          elements)?;
+    debug!(log, "done initializing heap");
+
+    let mut f = 0.0;
+    let mut sol = Vec::with_capacity(k);
+    let mut i = 0;
+    while let Some(top) = heap.pop() {
+        if !constraint(&sol, top.node) {
+            // adding this to the solution violates the constraints, continue onward
+            // since this is simple greedy, we know that we will never be able add this element to
+            // the solution.
+            continue;
+        }
+        let updated_gain = if top.weight == 0.0 {
+            // no point in updating gain
+            Some(top.weight)
+        } else {
+            obj.update_lazy_mut(top.node, &solset, &mut state)?
+        };
+
+        match updated_gain {
+            None => {}
+            Some(gain) => {
+                if !heap.is_empty() && gain < heap.peek().unwrap().weight {
+                    // updating the marginal gain caused the order of this element to be moved around
+                    heap.push(WeightedNode {
+                        node: top.node,
+                        weight: gain,
+                    });
+                    continue;
+                }
+            }
+        };
+
+        // if we got this far, we know that we have the real top
+        sol.push(top.node);
+        solset.insert(top.node.into());
+        obj.insert_lazy_mut(top.node, &mut state)?;
+        f += updated_gain.unwrap_or(top.weight);
+        // debug!(log, "benefit"; "f" => f, "actual" => obj.benefit(&solset, &state)?);
+        trace!(log, "selected element"; "node" => format!("{:?}", top.node), "objective value" => f);
+
+        // can't && i < k in a while let, unfortunately
+        i += 1;
+        if i >= k {
+            break;
+        }
+    }
+
+    info!(log, "greedy solution"; 
+          "f" => f);
+    Ok((f, sol, state))
+}
