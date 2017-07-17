@@ -57,13 +57,10 @@ impl<O: Objective> Ord for WeightedNode<O> {
 /// Further, any `Objective` to be optimized with the greedy algorithm should override the `delta`
 /// method to improve performance, as even when the `benefit` function is trivial the default
 /// implementation still includes an avoidable copy.
-pub fn greedy<O: Objective + Sync>(obj: &O,
-                                   k: usize,
-                                   log: Option<Logger>)
-                                   -> Result<(f64, Vec<O::Element>, O::State)>
-    where O::Element: Send + Sync,
-          O::State: Sync
-{
+pub fn greedy<O: Objective>(obj: &O,
+                            k: usize,
+                            log: Option<Logger>)
+                            -> Result<(f64, Vec<O::Element>, O::State)> {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
     let mut state = O::State::default();
     let mut solset = Set::default();
@@ -126,14 +123,12 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
 }
 
 /// A constrained version of `greedy`.
-pub fn greedy_constrained<O: Objective + Sync, F>(obj: &O,
-                                                  k: usize,
-                                                  constraint: F,
-                                                  log: Option<Logger>)
-                                                  -> Result<(f64, Vec<O::Element>, O::State)>
-    where O::Element: Send + Sync,
-          O::State: Sync,
-          F: Fn(&Vec<O::Element>, O::Element, &O::State) -> bool
+pub fn greedy_constrained<O: Objective, F>(obj: &O,
+                                           k: usize,
+                                           constraint: F,
+                                           log: Option<Logger>)
+                                           -> Result<(f64, Vec<O::Element>, O::State)>
+    where F: Fn(&Vec<O::Element>, O::Element, &O::State) -> bool
 {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
     let mut state = O::State::default();
