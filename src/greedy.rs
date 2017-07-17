@@ -125,6 +125,81 @@ pub fn greedy<O: Objective + Sync>(obj: &O,
     Ok((f, sol, state))
 }
 
+/// A constrained version of `greedy`.
+pub fn greedy_constrained<O: Objective + Sync, F>(obj: &O,
+                                                  k: usize,
+                                                  constraint: F,
+                                                  log: Option<Logger>)
+                                                  -> Result<(f64, Vec<O::Element>, O::State)>
+    where O::Element: Send + Sync,
+          O::State: Sync,
+          F: Fn(&Vec<O::Element>, O::Element, &O::State) -> bool
+{
+    let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
+    let mut state = O::State::default();
+    let mut solset = Set::default();
+    fn reheap<O: Objective>(sol: &Set<O::Element>,
+                            obj: &O,
+                            state: &O::State,
+                            prior: BinaryHeap<WeightedNode<O>>,
+                            elements: Set<O::Element>)
+                            -> Result<BinaryHeap<WeightedNode<O>>> {
+        prior.into_iter()
+            .filter(|ref we| !elements.contains(&we.node))
+            .map(|we| Ok(we))
+            .chain(elements.iter().cloned().map(|e| {
+                let w = obj.delta(e, &sol, &state)?;
+                Ok(WeightedNode {
+                    node: e,
+                    weight: w,
+                })
+            }))
+            .collect()
+    }
+
+    let elements = obj.elements().collect::<Set<_>>();
+    debug!(log, "initializing heap");
+    let mut heap = reheap(&solset,
+                          obj,
+                          &state,
+                          BinaryHeap::with_capacity(elements.len()),
+                          elements)?;
+    debug!(log, "done initializing heap");
+
+    let mut f = 0.0;
+    let mut sol = Vec::with_capacity(k);
+    let mut i = 0;
+    while let Some(top) = heap.pop() {
+        if !constraint(&sol, top.node, &state) {
+            debug!(log, "constraint prevented adding {:?}", top.node);
+            continue;
+        }
+        sol.push(top.node);
+        solset.insert(top.node.into());
+        f += top.weight;
+        trace!(log, "selected element"; "node" => format!("{:?}", top.node), "objective value" => f);
+        obj.insert_mut(top.node, &mut state)?;
+        // NOTE: this assumes a symmetric dependency relationship,
+        // i.e. v ∈ D(u) ⇐⇒ u ∈ D(v) ∀ u,v ∈ E
+        heap = reheap(&solset,
+                      obj,
+                      &state,
+                      heap,
+                      obj.depends(top.node, &state)?
+                          .filter(|&u| !solset.contains(&u))
+                          .collect())?;
+
+        // can't && i < k in a while let, unfortunately
+        i += 1;
+        if i >= k {
+            break;
+        }
+    }
+
+    debug!(log, "greedy solution"; "f" => f);
+    Ok((f, sol, state))
+}
+
 /// A lazy variant of `greedy` with no additional (implementation) requirements. However, the objective must be
 /// submodular to use this.
 ///
