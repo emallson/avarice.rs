@@ -123,12 +123,10 @@ pub fn greedy<O: Objective>(obj: &O,
 }
 
 /// A constrained version of `greedy`.
-pub fn greedy_constrained<O: ConstrainedObjective, F>(obj: &O,
-                                                      k: usize,
-                                                      log: Option<Logger>)
-                                                      -> Result<(f64, Vec<O::Element>, O::State)>
-    where F: Fn(&Vec<O::Element>, O::Element, &O::State) -> bool
-{
+pub fn greedy_constrained<O: ConstrainedObjective>(obj: &O,
+                                                   k: usize,
+                                                   log: Option<Logger>)
+                                                   -> Result<(f64, Vec<O::Element>, O::State)> {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
     let mut state = O::State::default();
     let mut solset = Set::default();
