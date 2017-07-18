@@ -123,11 +123,10 @@ pub fn greedy<O: Objective>(obj: &O,
 }
 
 /// A constrained version of `greedy`.
-pub fn greedy_constrained<O: Objective, F>(obj: &O,
-                                           k: usize,
-                                           constraint: F,
-                                           log: Option<Logger>)
-                                           -> Result<(f64, Vec<O::Element>, O::State)>
+pub fn greedy_constrained<O: ConstrainedObjective, F>(obj: &O,
+                                                      k: usize,
+                                                      log: Option<Logger>)
+                                                      -> Result<(f64, Vec<O::Element>, O::State)>
     where F: Fn(&Vec<O::Element>, O::Element, &O::State) -> bool
 {
     let log = log.unwrap_or_else(|| Logger::root(StdLog.fuse(), o!()));
@@ -165,7 +164,7 @@ pub fn greedy_constrained<O: Objective, F>(obj: &O,
     let mut sol = Vec::with_capacity(k);
     let mut i = 0;
     while let Some(top) = heap.pop() {
-        if !constraint(&sol, top.node, &state) {
+        if !obj.valid_addition(top.node, &sol, &state) {
             debug!(log, "constraint prevented adding {:?}", top.node);
             continue;
         }

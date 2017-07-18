@@ -176,3 +176,13 @@ pub trait LazyObjective: Objective {
     /// complex.
     fn insert_lazy_mut(&self, element: Self::Element, state: &mut Self::State) -> Result<()>;
 }
+
+/// An objective with further constraints than mere cardinality.
+pub trait ConstrainedObjective: Objective {
+    /// Returns true if adding `el` to `sol` would create a valid set.
+    fn valid_addition(&self,
+                      el: Self::Element,
+                      sol: &Vec<Self::Element>,
+                      state: &Self::State)
+                      -> bool;
+}
