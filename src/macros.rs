@@ -129,6 +129,7 @@ macro_rules! validate {
 mod test {
     use objective::*;
     use errors::*;
+    use setlike::Setlike;
 
     use quickcheck::{Gen, Arbitrary};
 
@@ -152,8 +153,20 @@ mod test {
                 .filter(move |&v| v == u)))
         }
 
-        fn benefit(&self, sol: &Set<u8>, _st: &Self::State) -> Result<f64> {
+        fn benefit<S: Setlike<u8>>(&self, sol: &S, _st: &Self::State) -> Result<f64> {
             Ok(sol.len() as f64)
+        }
+
+        fn delta<S: Setlike<u8>>(&self, el: u8, sol: &S, _st: &Self::State) -> Result<f64> {
+            if !sol.contains(&el) {
+                Ok(1.0)
+            } else {
+                Ok(0.0)
+            }
+        }
+
+        fn nabla<S: Setlike<u8>>(&self, _u: u8, _v: u8, _sol: &S, _st: &Self::State) -> Result<f64> {
+            Ok(1.0)
         }
 
         fn insert_mut(&self, _u: u8, _st: &mut Self::State) -> Result<()> {

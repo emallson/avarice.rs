@@ -1,3 +1,4 @@
+extern crate setlike;
 extern crate avarice;
 #[macro_use]
 extern crate avarice_derive;
@@ -7,6 +8,7 @@ mod test {
     use avarice::objective::*;
     use avarice::objective::curvature::Bounded;
     use avarice::errors::*;
+    use setlike::Setlike;
     use std::iter;
 
     macro_rules! obj {
@@ -26,7 +28,11 @@ mod test {
                     Ok(Box::new(iter::empty()))
                 }
 
-                fn benefit(&self, _s: &Set<Self::Element>, _st: &Self::State) -> Result<f64> {
+                fn benefit<S: Setlike<Self::Element>>(&self, _s: &S, _st: &Self::State) -> Result<f64> {
+                    Ok(0.0)
+                }
+
+                fn delta<S: Setlike<Self::Element>>(&self, _el: Self::Element, _s: &S, _st: &Self::State) -> Result<f64> {
                     Ok(0.0)
                 }
 
