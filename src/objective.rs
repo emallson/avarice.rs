@@ -62,7 +62,8 @@ pub trait Objective: Sized {
     fn elements(&self) -> ElementIterator<Self>;
 
     /// The implementation of the function `f`. This is the eponymous `Objective`.
-    fn benefit<S: Setlike<Self::Element>>(&self, s: &S, state: &Self::State) -> Result<f64>;
+    fn benefit<S>(&self, s: &S, state: &Self::State) -> Result<f64>
+        where S: Setlike<Self::Element> + IntoIterator<Item = Self::Element>;
 
     /// The marginal gain $\delta(u \mid S) = f(S \cup u) - f(S)$
     ///
@@ -70,7 +71,8 @@ pub trait Objective: Sized {
     ///
     /// The default implementation is incredibly inefficient (two calls to `benefit`), so
     /// overriding this is *strongly* encouraged.
-    fn delta<S: Setlike<Self::Element>>(&self, u: Self::Element, s: &S, state: &Self::State) -> Result<f64>;
+    fn delta<S>(&self, u: Self::Element, s: &S, state: &Self::State) -> Result<f64>
+        where S: Setlike<Self::Element> + IntoIterator<Item = Self::Element>;
 
     /// The primal curvature $\nabla(u, v\mid S) = \frac{\delta(u \mid S \cup v)}{\delta(u \mid
     /// S)}$.
@@ -80,13 +82,13 @@ pub trait Objective: Sized {
     /// The default implementation panics with `unimplemented!()`
     #[allow(unused_variables)]
     fn nabla<S: Setlike<Self::Element>>(&self,
-             u: Self::Element,
-             v: Self::Element,
-             s: &S,
-             state: &Self::State)
-        -> Result<f64> {
-            unimplemented!()
-        }
+                                        u: Self::Element,
+                                        v: Self::Element,
+                                        s: &S,
+                                        state: &Self::State)
+                                        -> Result<f64> {
+        unimplemented!()
+    }
 
     /// The elements on which the marginal gain of `u` depends. The technical definition I have
     /// been using is based on the primal curvature (`nabla`): if `u` depends on `v`, then
@@ -144,10 +146,10 @@ pub trait LazyObjective: Objective {
     ///
     /// Returns `Ok(None)` if the marginal gain does not need to be updated.
     fn update_lazy_mut<S: Setlike<Self::Element>>(&self,
-                       element: Self::Element,
-                       previous: &S,
-                       state: &mut Self::State)
-                       -> Result<Option<f64>>;
+                                                  element: Self::Element,
+                                                  previous: &S,
+                                                  state: &mut Self::State)
+                                                  -> Result<Option<f64>>;
 
     /// Update the state to preserve invariants upon insertion of `element`.
     ///
