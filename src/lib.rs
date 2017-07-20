@@ -8,6 +8,7 @@ extern crate rayon;
 extern crate slog;
 extern crate slog_stdlog;
 extern crate fnv;
+extern crate setlike;
 
 #[cfg(test)]
 #[macro_use]

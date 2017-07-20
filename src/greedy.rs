@@ -74,7 +74,7 @@ pub fn greedy<O: Objective>(obj: &O,
             .filter(|ref we| !elements.contains(&we.node))
             .map(|we| Ok(we))
             .chain(elements.iter().cloned().map(|e| {
-                let w = obj.delta(e, &sol, &state)?;
+                let w = obj.delta(e, sol, &state)?;
                 Ok(WeightedNode {
                     node: e,
                     weight: w,
@@ -140,7 +140,7 @@ pub fn greedy_constrained<O: ConstrainedObjective>(obj: &O,
             .filter(|ref we| !elements.contains(&we.node))
             .map(|we| Ok(we))
             .chain(elements.iter().cloned().map(|e| {
-                let w = obj.delta(e, &sol, &state)?;
+                let w = obj.delta(e, sol, &state)?;
                 Ok(WeightedNode {
                     node: e,
                     weight: w,
@@ -228,7 +228,7 @@ pub fn lazy_greedy<O: Objective + curvature::Submodular>
             .filter(|ref we| !elements.contains(&we.node))
             .map(|we| Ok(we))
             .chain(elements.iter().cloned().map(|e| {
-                let w = obj.delta(e, &sol, &state)?;
+                let w = obj.delta(e, sol, &state)?;
                 Ok(WeightedNode {
                     node: e,
                     weight: w,
@@ -334,7 +334,7 @@ pub fn lazier_greedy<O: Objective + LazyObjective + curvature::Submodular>
             .filter(|ref we| !elements.contains(&we.node))
             .map(|we| Ok(we))
             .chain(elements.iter().cloned().map(|e| {
-                let w = obj.delta(e, &sol, &state)?;
+                let w = obj.delta(e, sol, &state)?;
                 Ok(WeightedNode {
                     node: e,
                     weight: w,
@@ -425,7 +425,7 @@ pub fn lazier_greedy_constrained<O: Objective + LazyObjective + curvature::Submo
             .filter(|ref we| !elements.contains(&we.node))
             .map(|we| Ok(we))
             .chain(elements.iter().cloned().map(|e| {
-                let w = obj.delta(e, &sol, &state)?;
+                let w = obj.delta(e, sol, &state)?;
                 Ok(WeightedNode {
                     node: e,
                     weight: w,

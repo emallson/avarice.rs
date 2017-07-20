@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use errors::*;
 use fnv::FnvHashSet;
+use setlike::Setlike;
 
 pub type Set<E> = FnvHashSet<E>;
 
@@ -51,10 +52,6 @@ pub mod curvature {
 /// The functions are assumed to be 'internally-stateless'. That is, they do not modify the problem
 /// instance, and instead track any relevant information on the associated `State` type. This
 /// allows snapshotting of the state and allows safe parallel computation.
-///
-/// Any implementation must at a minimum implement `elements`, `benefit`, and `insert_mut`, though
-/// at least implementing `delta` is strongly encouraged.  `nabla` may be omitted if your
-/// application does not need it.
 pub trait Objective: Sized {
     type Element: Eq + Hash + Clone + Copy + Debug;
     /// Holds any state that is tracked either to assist in correctness or to provide e.g.
@@ -65,7 +62,7 @@ pub trait Objective: Sized {
     fn elements(&self) -> ElementIterator<Self>;
 
     /// The implementation of the function `f`. This is the eponymous `Objective`.
-    fn benefit(&self, s: &Set<Self::Element>, state: &Self::State) -> Result<f64>;
+    fn benefit<S: Setlike<Self::Element>>(&self, s: &S, state: &Self::State) -> Result<f64>;
 
     /// The marginal gain $\delta(u \mid S) = f(S \cup u) - f(S)$
     ///
@@ -73,41 +70,23 @@ pub trait Objective: Sized {
     ///
     /// The default implementation is incredibly inefficient (two calls to `benefit`), so
     /// overriding this is *strongly* encouraged.
-    fn delta(&self, u: Self::Element, s: &Set<Self::Element>, state: &Self::State) -> Result<f64> {
-        let next_state = self.insert(u, state)?;
-        let mut next_set = s.clone();
-        next_set.insert(u);
-
-        Ok(self.benefit(&next_set, &next_state)? - self.benefit(s, state)?)
-    }
+    fn delta<S: Setlike<Self::Element>>(&self, u: Self::Element, s: &S, state: &Self::State) -> Result<f64>;
 
     /// The primal curvature $\nabla(u, v\mid S) = \frac{\delta(u \mid S \cup v)}{\delta(u \mid
     /// S)}$.
     ///
     /// Should return `1` for $u \in S$ or when `depends(u, S)` does not contain `v`.
     ///
-    /// The default implementation should be avoided, as it computes this result directly by
-    /// calling `delta` twice.
-    fn nabla(&self,
+    /// The default implementation panics with `unimplemented!()`
+    #[allow(unused_variables)]
+    fn nabla<S: Setlike<Self::Element>>(&self,
              u: Self::Element,
              v: Self::Element,
-             s: &Set<Self::Element>,
+             s: &S,
              state: &Self::State)
-             -> Result<f64> {
-        let next_state = self.insert(v, state)?;
-        let mut next_set = s.clone();
-        next_set.insert(v);
-
-        let lower = self.delta(u, s, state)?;
-        let upper = self.delta(u, &next_set, &next_state)?;
-        if lower == 0.0 && upper == 0.0 {
-            Ok(1.0)
-        } else if lower == 0.0 {
-            Err(ErrorKind::DivideByZero(upper, lower).into())
-        } else {
-            Ok(upper / lower)
+        -> Result<f64> {
+            unimplemented!()
         }
-    }
 
     /// The elements on which the marginal gain of `u` depends. The technical definition I have
     /// been using is based on the primal curvature (`nabla`): if `u` depends on `v`, then
@@ -164,9 +143,9 @@ pub trait LazyObjective: Objective {
     /// reflect the insertion of `previous` elements.
     ///
     /// Returns `Ok(None)` if the marginal gain does not need to be updated.
-    fn update_lazy_mut(&self,
+    fn update_lazy_mut<S: Setlike<Self::Element>>(&self,
                        element: Self::Element,
-                       previous: &Set<Self::Element>,
+                       previous: &S,
                        state: &mut Self::State)
                        -> Result<Option<f64>>;
 

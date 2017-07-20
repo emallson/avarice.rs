@@ -10,6 +10,7 @@ rand = "0.3.15"
 rayon = "0.8.2"
 slog = "~2.0"
 slog-stdlog = "~2.0.0-0.2"
+setlike = { version = "0.1", git = "https://github.com/emallson/setlike.git" }
 
 [dependencies.avarice-derive]
 path = "avarice-derive"
