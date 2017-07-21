@@ -58,8 +58,8 @@ pub fn lambda<O: Objective>(obj: &O,
             if S.contains(&t) {
                 continue;
             }
-            obj.insert_mut(t, &mut tstate)?;
             sum += gamma(obj, t, &Ti, S, state, &tstate)?;
+            obj.insert_mut(t, &mut tstate)?;
             Ti.insert(t);
         } else {
             sum += 1.0; // gamma is 1 for independent elements by definition
